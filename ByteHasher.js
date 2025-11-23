@@ -1,7 +1,7 @@
 /**
  * ByteHasher - A simple, lightweight hash function for constrained 8-bit environments.
  *
- * @version 1.0.0
+ * @version 1.0.1
  * @author Anders Lindman
  * @license CC0-1.0 (Public Domain)
  *
@@ -64,13 +64,21 @@ function finalizeState() {
   }
 }
 
-// Fold the internal state to a 256-bit hash value.
 function foldState() {
-  digest.fill(0)
+  let feedback = 0
+
   for (let i = 0; i < HASH_SIZE; i++) {
-    digest[i] = state[i] ^ state[i + HASH_SIZE] ^ 
-        state[i + HASH_SIZE * 2] ^ state[i * 3]
+    let acc =
+        state[i]
+      + state[i + HASH_SIZE]
+      + state[i + HASH_SIZE * 2]
+      + state[i + HASH_SIZE * 3]
+      + feedback
+    acc &= 0xff
+    digest[i] = acc
+    feedback = acc // feedback
   }
+
   return digest
 }
 
