@@ -23,7 +23,7 @@ const state = new Uint8Array(STATE_SIZE)
 
 // Data-dependent 8-bit Xorshift
 function rnd(data) {
-  const t = ((x ^ data) ^ (x << 3)) & 0xff // 8-bit mask
+  const t = ((x + data) ^ (x << 3)) & 0xff // 8-bit mask
   x = y
   y = z
   z = w
