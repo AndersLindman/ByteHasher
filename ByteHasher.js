@@ -1,7 +1,7 @@
 /**
  * ByteHasher - A simple, lightweight hash function for constrained 8-bit environments.
  *
- * @version 1.0.1
+ * @version 1.0.2
  * @author Anders Lindman
  * @license CC0-1.0 (Public Domain)
  *
