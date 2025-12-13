@@ -12,6 +12,12 @@
 const HASH_SIZE = 32; // 256-bit hash value size
 const STATE_SIZE = 128; // 1024-bit internal state
 
+// Fixed 4-byte Initial Vector (IV) for PRNG state
+const PRNG_IV_X = 0x01;
+const PRNG_IV_Y = 0x23;
+const PRNG_IV_Z = 0x45;
+const PRNG_IV_W = 0x67;
+
 // PRNG state variables (Global variables to eliminate extra reference overhead.)
 let x = 0;
 let y = 0;
@@ -22,7 +28,7 @@ const state = new Uint8Array(STATE_SIZE);
 
 // Data-dependent 8-bit Xorshift PRNG
 function rnd(data) {
-  const t = ((x + data) ^ (x << 3)) & 0xff; 
+  const t = ((x + data) ^ (x << 3)) & 0xff;
   x = y;
   y = z;
   z = w;
@@ -38,18 +44,18 @@ function setSeed(a, b, c, d) {
 }
 
 function absorbMessage(message) {
-  state.fill(0); 
+  state.fill(0);
   let pos = 0;
 
-  // 1. Seed the PRNG with the first 4 bytes. 
-  setSeed(message[0], message[1], message[2], message[3]);
-  
+  // 1. Seed the PRNG with the first 4 bytes.
+  setSeed(PRNG_IV_X, PRNG_IV_Y, PRNG_IV_Z, PRNG_IV_W);
+
   // 2. Absorb phase starts at index 4
-  for (let i = 4; i < message.length; i++) {
+  for (let i = 0; i < message.length; i++) {
     pos = i % STATE_SIZE;
     state[pos] ^= rnd(message[i]);
   }
-  
+
   // 3. Finalization rounds
   for (let i = 0; i < STATE_SIZE * 8; i++) {
     const index = pos % STATE_SIZE;
@@ -80,19 +86,19 @@ function logHex(uint8Array) {
 }
 
 function hash8(message) {
-  const encoder = new TextEncoder()
-  const bytes = encoder.encode(message)
-  const padded = pkcs7Pad(bytes, 4)
-  absorbMessage(padded)
-  return state.slice(0, HASH_SIZE)
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(message);
+  const padded = pkcs7Pad(bytes, 4);
+  absorbMessage(padded);
+  return state.slice(0, HASH_SIZE);
 }
 
 function logHex(uint8Array) {
-    const hex = Array.from(uint8Array, byte => 
-        byte.toString(16).padStart(2, '0')
-    ).join(' ')
-    console.log(hex)
+  const hex = Array.from(uint8Array, (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join(' ');
+  console.log(hex);
 }
 
-const hashValue = hash8("hello world")
-logHex(hashValue)
+const hashValue = hash8('hello world');
+logHex(hashValue);
