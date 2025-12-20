@@ -100,5 +100,5 @@ function logHex(uint8Array) {
   console.log(hex);
 }
 
-const hashValue = hash8('hello world');
+const hashValue = hash8('hello, world');
 logHex(hashValue);
