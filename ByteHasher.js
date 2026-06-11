@@ -64,9 +64,13 @@ function confuse() {
 // ------------------------------
 function diffuse() {
     setSeed(state[0], state[1], state[2], state[3]);
+    rnd();
+    rnd();
+    rnd();
+    rnd();
 
     for (let i = 0; i < STATE_SIZE; i++) {
-        state[i] ^= rnd(state[i]);
+        state[i] ^= rnd(state[(i + 37) % STATE_SIZE]);
     }
 }
 
