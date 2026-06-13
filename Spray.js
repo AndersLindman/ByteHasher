@@ -7,6 +7,7 @@ const RATE_BYTES = RATE_U32 * 4; // 64
 
 const state = new Uint32Array(STATE_SIZE_U32);
 const encoder = new TextEncoder();
+let x, y, z, w;
 
 const ROUND_CONSTANTS = new Uint32Array([0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]);
 
@@ -44,7 +45,7 @@ function rnd(data) {
 
 function confuse() {
     for (let i = 0; i < STATE_SIZE_U32; i++) {
-        const offset = (state[(i + 27) & 63] & 63) | 1; // Always odd, keeping it coprime to 64
+        const offset = (state[(i + 47) & 63] & 63) | 1; // Always odd, keeping it coprime to 64
         const val = state[i];
         state[i] = (SBOX[(val >>> 24) & 0xff] << 24) |
             (SBOX[(val >>> 16) & 0xff] << 16) |
@@ -75,7 +76,7 @@ function absorb(bytes) {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     let offset = 0;
 
-    // 1. Process all full 64-byte blocks directly from the input buffer (Zero-copy)
+    // 1. Process all full 64-byte blocks directly from the input buffer
     for (; offset + RATE_BYTES <= bytes.length; offset += RATE_BYTES) {
         for (let i = 0; i < RATE_U32; i++) {
             state[i] ^= view.getUint32(offset + (i * 4), true);
@@ -83,18 +84,22 @@ function absorb(bytes) {
         permute();
     }
 
-    // 2. Handle the remaining bytes + padding (Only allocates max 64 bytes)
-    let remaining = bytes.length - offset;
-    let tailLen = Math.ceil((remaining + 1) / 4) * 4; // Pad to 4-byte boundary
-    const tailBlock = new Uint8Array(tailLen);
-    tailBlock.set(bytes.subarray(offset)); // Copy ONLY the tail
-    tailBlock[remaining] = 0x80;
+    let remaining = bytes.length % RATE_BYTES;
 
-    const tailView = new DataView(tailBlock.buffer);
-    let words = tailLen >>> 2;
-    for (let i = 0; i < words; i++) {
-        state[i] ^= tailView.getUint32(i * 4, true);
+    // 2. ABSORB REMAINING BYTES: XOR the actual leftover payload into the state
+    for (let i = 0; i < remaining; i++) {
+        let wIdx = i >>> 2;
+        let bShift = (i % 4) * 8;
+        state[wIdx] ^= (bytes[offset + i] << bShift);
     }
+
+    // 3. APPLY PADDING
+    let wordIdx = remaining >>> 2;
+    let byteIdx = remaining % 4;
+
+    state[wordIdx] ^= (0x01 << (byteIdx * 8));
+    state[RATE_U32 - 1] ^= (0x80 << 24);
+
     permute();
 }
 
@@ -110,13 +115,25 @@ function squeeze(outLen) {
         let chunkBytes = Math.min(RATE_BYTES, outLen - pos);
         let words = chunkBytes >>> 2;
 
+        // 1. Write the full 32-bit words
         for (let i = 0; i < words; i++) {
             view.setUint32(pos + (i * 4), state[i], true);
         }
 
+        // 2. Handle the trailing bytes BEFORE advancing pos
+        let remainder = chunkBytes % 4;
+        if (remainder > 0) {
+            let word = state[words];
+            for(let r = 0; r < remainder; r++) {
+                out[pos + (words * 4) + r] = (word >>> (r * 8)) & 0xff;
+            }
+        }
+
+        // 3. Advance position and permute if we need more data
         pos += chunkBytes;
         if (pos < outLen) permute();
     }
+
     return out;
 }
 
@@ -370,7 +387,7 @@ function collisionStressTest(samples = 100000) {
 
 function longMessageDiffusionTest(trials = 1000, numBlocks = 10) {
     const rng = mulberry32(77777); // Seeded PRNG
-    const msgLen = numBlocks * RATE_U32; // 10 blocks * 64 bytes = 640 bytes
+    const msgLen = numBlocks * RATE_BYTES; // 10 blocks * 64 bytes = 640 bytes
     const outputBits = HASH_SIZE_BYTES * 8; // 256 bits
 
     let totalFlipped = 0;
@@ -393,7 +410,7 @@ function longMessageDiffusionTest(trials = 1000, numBlocks = 10) {
         const baseHash = hash(msg);
 
         // 3. Pick a random bit strictly within the FIRST block (indices 0 to RATE-1)
-        const byteIndex = Math.floor(rng() * RATE_U32);
+        const byteIndex = Math.floor(rng() * RATE_BYTES);
         const bitIndex = Math.floor(rng() * 8);
 
         // 4. Mutate and hash
@@ -511,6 +528,8 @@ function bitIndependenceCriterionTest(trials = 1000, msgLen = 16) {
 function lowEntropyStressTest(trials = 100) {
     console.log(`\n--- Improved Low-Entropy Stress Test (${trials} trials/pattern) ---`);
 
+    const rng = mulberry32(54321);
+
     const patterns = [
         { name: "All Zeros", data: new Uint8Array(128).fill(0x00) },
         { name: "All Ones", data: new Uint8Array(128).fill(0xFF) },
@@ -526,8 +545,8 @@ function lowEntropyStressTest(trials = 100) {
 
             // Randomly pick a bit to flip across the whole message
             const mutated = new Uint8Array(p.data);
-            const byteIndex = Math.floor(Math.random() * p.data.length);
-            const bitIndex = Math.floor(Math.random() * 8);
+            const byteIndex = Math.floor(rng() * p.data.length);
+            const bitIndex = Math.floor(rng() * 8);
             mutated[byteIndex] ^= (1 << bitIndex);
 
             const h2 = hash(mutated);
