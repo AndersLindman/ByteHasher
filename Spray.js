@@ -9,7 +9,10 @@ const state = new Uint32Array(STATE_SIZE_U32);
 const encoder = new TextEncoder();
 let x, y, z, w;
 
-const ROUND_CONSTANTS = new Uint32Array([0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80]);
+const ROUND_CONSTANTS = new Uint32Array([ // Prime cube roots
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+    0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5
+]);
 
 const SBOX = new Uint8Array([
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -30,10 +33,10 @@ const SBOX = new Uint8Array([
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 ]);
 
-const INITIAL_X = 0xdeadbeef;
-const INITIAL_Y = 0xfaceb00c;
-const INITIAL_Z = 0x8badf00d;
-const INITIAL_W = 0x12345678;
+const INITIAL_X = 0x9E3779B9; // Golden ratio
+const INITIAL_Y = 0x3243F6A8; // Pi
+const INITIAL_Z = 0x402DF854; // e
+const INITIAL_W = 0xB504F334; // Sqrt(2)
 
 function rnd(data) {
     const n = z & 0x1f;
@@ -45,13 +48,18 @@ function rnd(data) {
 
 function confuse() {
     for (let i = 0; i < STATE_SIZE_U32; i++) {
-        const offset = (state[(i + 47) & 63] & 63) | 1; // Always odd, keeping it coprime to 64
+        const offset = (state[(i ^ 11) & 63] ^ state[(i ^ 47) & 63]) & 63;
         const val = state[i];
+
+        // S-box substitution
         state[i] = (SBOX[(val >>> 24) & 0xff] << 24) |
             (SBOX[(val >>> 16) & 0xff] << 16) |
-            (SBOX[(val >>> 8) & 0xff] << 8) |
+            (SBOX[(val >>> 8)  & 0xff] << 8)  |
             SBOX[val & 0xff];
-        state[i] ^= state[(i + offset) & 63] >>> 3;
+
+        // Data-dependent shift
+        const shift = (state[(i + offset + 29) & 63] & 31) | 1;
+        state[i] ^= state[(i + offset) & 63] >>> shift;
     }
 }
 
@@ -86,14 +94,14 @@ function absorb(bytes) {
 
     let remaining = bytes.length % RATE_BYTES;
 
-    // 2. ABSORB REMAINING BYTES: XOR the actual leftover payload into the state
+    // 2. Absorb remaining bytes
     for (let i = 0; i < remaining; i++) {
         let wIdx = i >>> 2;
         let bShift = (i % 4) * 8;
-        state[wIdx] ^= (bytes[offset + i] << bShift);
+        state[wIdx] ^= bytes[offset + i] << bShift;
     }
 
-    // 3. APPLY PADDING
+    // 3. Apply padding
     let wordIdx = remaining >>> 2;
     let byteIdx = remaining % 4;
 
@@ -120,7 +128,7 @@ function squeeze(outLen) {
             view.setUint32(pos + (i * 4), state[i], true);
         }
 
-        // 2. Handle the trailing bytes BEFORE advancing pos
+        // 2. Handle the trailing bytes before advancing pos
         let remainder = chunkBytes % 4;
         if (remainder > 0) {
             let word = state[words];
@@ -204,7 +212,7 @@ function xorBytes(a, b) {
 function mulberry32(a) {
     return function() {
         a |= 0; a = a + 0x6D2B79F5 | 0;
-        var t = Math.imul(a ^ a >>> 15, 1 | a);
+        let t = Math.imul(a ^ a >>> 15, 1 | a);
         t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
         return ((t ^ t >>> 14) >>> 0) / 4294967296;
     }
